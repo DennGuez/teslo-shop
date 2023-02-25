@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, InternalServerErrorException, Logger, NotFoundException } from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
-import { Repository } from 'typeorm'
+import { Not, Repository } from 'typeorm'
 import { Product } from './entities/product.entity'
 import { CreateProductDto } from './dto/create-product.dto'
 import { UpdateProductDto } from './dto/update-product.dto'
@@ -62,9 +62,9 @@ export class ProductsService {
     } else {
       const queryBuilder = this.productRepository.createQueryBuilder()
       // select * from Products where slug='XX' or title="XXXX"
-      product = await queryBuilder.where('LOWER(title) = LOWER(:title) or slug =:slug', {
-        title: term,
-        slug: term
+      product = await queryBuilder.where('UPPER(title) = :title or slug =:slug', {
+        title: term.toUpperCase(),
+        slug: term.toLocaleLowerCase()
       }).getOne()
     }
 
@@ -73,14 +73,28 @@ export class ProductsService {
     return product
   }
 
-  async update(id: number, updateProductDto: UpdateProductDto) {
-    return `This action updates a #${id} product`
+  async update(id: string, updateProductDto: UpdateProductDto) {
+
+    const product = await this.productRepository.preload({
+      // id: id,
+      id,
+      ...updateProductDto
+    })
+
+    if ( !product ) throw new NotFoundException(`Product with id: ${ id } not found`)
+
+    try {
+      // return this.productRepository.save( product)
+      await this.productRepository.save(product)
+      return product
+    } catch (error) {
+      this.handleDBExceptions(error)
+    }
   }
 
   async remove(id: string) {
     const product = await this.findOne(id)
     await this.productRepository.remove(product)
-    
   }
 
   private handleDBExceptions( error: any ) {
