@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config'
 import { TypeOrmModule } from '@nestjs/typeorm'
 // import { EnvConfiguration } from './config/app.config'
 import { ProductsModule } from './products/products.module'
+import { CommonModule } from './common/common.module';
 
 
 @Module({
@@ -18,7 +19,8 @@ import { ProductsModule } from './products/products.module'
       autoLoadEntities: true,
       synchronize: true // Usualmente en prod es false.
     }),
-    ProductsModule
+    ProductsModule,
+    CommonModule
   ]
 })
 export class AppModule {}
