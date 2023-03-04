@@ -1,12 +1,11 @@
 import { BadRequestException, Injectable, InternalServerErrorException, Logger, NotFoundException } from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
-import { Repository } from 'typeorm'
+import { DataSource, Repository } from 'typeorm'
 import { validate as isUUID } from 'uuid'
 import { CreateProductDto } from './dto/create-product.dto'
 import { UpdateProductDto } from './dto/update-product.dto'
 import { PaginationDto } from './../common/dtos/pagination.dto'
 import { Product, ProductImage } from './entities'
-
 
 @Injectable()
 export class ProductsService {
@@ -21,8 +20,9 @@ export class ProductsService {
     @InjectRepository(ProductImage)
     private readonly ProductImageRepository: Repository<ProductImage>,
 
-  ){}
+    private readonly dataSource: DataSource
 
+  ){}
 
   async create(createProductDto: CreateProductDto) {
     try {
@@ -108,20 +108,50 @@ export class ProductsService {
 
   async update(id: string, updateProductDto: UpdateProductDto) {
 
+    const { images, ...toUpdate } = updateProductDto
+
     const product = await this.productRepository.preload({
       // id: id,
       id,
-      ...updateProductDto,
-      images: []
+      ...toUpdate
     })
 
     if ( !product ) throw new NotFoundException(`Product with id: ${ id } not found`)
 
+    /* Si tenemos un producto evaluamos si viene con imagenes */
+    /* Create QueryRunner */
+    const queryRunner = this.dataSource.createQueryRunner()
+    /* Conectamos a la DB */
+    await queryRunner.connect()
+    await queryRunner.startTransaction()
+
     try {
+
+      /* Si vienen las imagenes las eliminamos */
+      if ( images ) {
+        await queryRunner.manager.delete( ProductImage, { product: { id } } )
+        product.images = images.map( 
+          image => this.ProductImageRepository.create({ url: image }))
+      }
+
+      await queryRunner.manager.save( product )
       // return this.productRepository.save( product)
-      await this.productRepository.save(product)
-      return product
+      // await this.productRepository.save(product)
+
+      /* Aplicamos los cambios */
+      await queryRunner.commitTransaction()
+      /* Deshabilitamos el QueryRunner */
+      await queryRunner.release()
+
+      /* Con este return NO nos devuelve las imagenes */
+      // return product
+      /* Con este return SI nos devuelve las imagenes */
+      return this.findOnePlain( id )
     } catch (error) {
+
+      await queryRunner.rollbackTransaction()
+      await queryRunner.release()
+
       this.handleDBExceptions(error)
     }
   }
@@ -137,5 +167,18 @@ export class ProductsService {
 
     this.logger.error(error)
     throw new InternalServerErrorException('Unexpected error, check server logs')
+  }
+
+  async deleteAllProducts() {
+    const query = this.ProductImageRepository.createQueryBuilder('product')
+    /* Eliminamos todos los productos */
+    try {
+      return await query
+        .delete()
+        .where({})
+        .execute()
+    } catch ( error ) {
+      this.handleDBExceptions(error)
+    }
   }
 }
